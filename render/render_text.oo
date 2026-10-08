@@ -1,0 +1,49 @@
+// # Render Text - Terminal Text Output Formatter
+//
+// Logline: Formats plain reflowed paragraphs and multi-mode showcase demonstrations.
+//
+// Setup: Pure terminal text generator without color escape leaks or ambient mutations.
+//
+// Beats:
+//   1. Generate multi-paragraph interactive showcase demonstrations.
+//   2. Present side-by-side or sequential comparisons of formatting modes.
+//   3. Render quote prefix preservation and split-only showcases.
+
+import "core/fmt_options.oo";
+import "core/reflow_engine.oo";
+import "core/margin_auditor.oo";
+
+pub fn render_demo_showcase() -> String {
+    let mut out: String = "=== oofmt Sovereign Text Reflow & Paragraph Reformer Showcase ===\n\n";
+
+    let raw_paragraph: String = "The openOODA project builds sovereign, capability-bounded system tools and utilities. "
+        + "Each tool is compiled directly into a hermetic native binary with zero ambient authority, "
+        + "preventing unexpected disk, network, or environment leakage while maintaining IEEE Std 1003.1 POSIX CLI parity.\n";
+
+    out = out + "[1] Standard Reflow (Max Width: 60 columns):\n";
+    let cfg60: FmtConfig = make_custom_config(60, 55, false, false, false, "");
+    out = out + reflow_text(raw_paragraph, cfg60) + "\n";
+
+    out = out + "[2] Email / Comment Quoting Reflow (Prefix: \"> \", Width: 50 columns):\n";
+    let raw_quote: String = "> In earlier systems, text reflow was performed by ad-hoc shell filters or bloated runtimes. "
+        + "> With oofmt, AI coding agents and human operators enjoy identical deterministic wrapping.\n";
+    let cfg_quote: FmtConfig = make_custom_config(50, 45, false, false, false, "> ");
+    out = out + reflow_text(raw_quote, cfg_quote) + "\n";
+
+    out = out + "[3] Split-Only Mode (-s, Width: 45 columns, no line joining):\n";
+    let raw_split: String = "First short line.\n"
+        + "Second line that happens to be significantly longer than the narrow forty-five column margin.\n"
+        + "Third short line.\n";
+    let cfg_split: FmtConfig = make_custom_config(45, 40, true, false, false, "");
+    out = out + reflow_text(raw_split, cfg_split) + "\n";
+
+    out = out + "[4] Uniform Spacing (-u, double spaces after sentence endings):\n";
+    let raw_u: String = "First sentence ends here. Second sentence starts immediately. Does this work? Absolutely!\n";
+    let cfg_u: FmtConfig = make_custom_config(60, 55, false, true, false, "");
+    out = out + reflow_text(raw_u, cfg_u) + "\n";
+
+    let stats: MarginStats = audit_margins(raw_paragraph, reflow_text(raw_paragraph, cfg60), 60);
+    out = out + render_margin_report(stats);
+
+    return out;
+}

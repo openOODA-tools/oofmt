@@ -1,0 +1,76 @@
+// # Formatting Configuration - Options Specification
+//
+// Logline: Encapsulates paragraph reflow parameters, widths, spacing rules, and prefixes.
+//
+// Setup: Pure value type definitions without system dependencies or ambient side-effects.
+//
+// Beats:
+//   1. Define FmtConfig record holding margin, goal, and rule flags.
+//   2. Provide sensible defaults matching IEEE Std 1003.1 and GNU fmt conventions.
+//   3. Support prefix, uniform spacing, and crown margin options.
+
+pub type FmtConfig = struct {
+    width: Int,
+    goal: Int,
+    split_only: Bool,
+    uniform_spacing: Bool,
+    crown_margin: Bool,
+    prefix: String,
+    json_mode: Bool,
+    demo: Bool,
+    help: Bool,
+    version: Bool,
+    test_mode: Bool,
+    mcp_mode: Bool,
+    files: List[String]
+};
+
+pub fn default_fmt_config() -> FmtConfig {
+    return FmtConfig {
+        width: 75,
+        goal: 70,
+        split_only: false,
+        uniform_spacing: false,
+        crown_margin: false,
+        prefix: "",
+        json_mode: false,
+        demo: false,
+        help: false,
+        version: false,
+        test_mode: false,
+        mcp_mode: false,
+        files: list_new()
+    };
+}
+
+pub fn make_custom_config(
+    width: Int,
+    goal: Int,
+    split_only: Bool,
+    uniform_spacing: Bool,
+    crown_margin: Bool,
+    prefix: String
+) -> FmtConfig {
+    let effective_width: Int = if width > 0 { width } else { 75 };
+    let effective_goal: Int = if goal > 0 {
+        goal
+    } else {
+        if effective_width > 10 { effective_width - 5 } else { effective_width }
+    };
+
+    return FmtConfig {
+        width: effective_width,
+        goal: effective_goal,
+        split_only: split_only,
+        uniform_spacing: uniform_spacing,
+        crown_margin: crown_margin,
+        prefix: prefix,
+        json_mode: false,
+        demo: false,
+        help: false,
+        version: false,
+        test_mode: false,
+        mcp_mode: false,
+        files: list_new()
+    };
+}

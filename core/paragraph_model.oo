@@ -1,0 +1,193 @@
+// # Paragraph Model - Structural Partitioning Engine
+//
+// Logline: Partitions continuous text streams into structured, indentation-aware paragraphs.
+//
+// Setup: Pure structural block parser respecting blank line delimiters and prefixes.
+//
+// Beats:
+//   1. Segment raw text buffer into newline-separated line records.
+//   2. Distinguish blank paragraph boundaries from running text.
+//   3. Calculate crown indentation profiles (first-line vs body indent).
+//   4. Collate matched words and raw lines into ParagraphBlock records.
+
+import "core/text_words.oo";
+
+pub type ParagraphBlock = struct {
+    is_blank: Bool,
+    has_prefix: Bool,
+    prefix_text: String,
+    indent1: Int,
+    indent2: Int,
+    words: List[String],
+    raw_lines: List[String]
+};
+
+pub fn split_text_lines(text: String) -> List[String] {
+    let mut lines: List[String] = list_new();
+    let n: Int = chars_len(text);
+    if n == 0 {
+        return lines;
+    }
+
+    let mut start: Int = 0;
+    let mut i: Int = 0;
+    while i < n {
+        let b: Int = byte_at(text, i);
+        if b == 10 { // newline \n
+            let mut end: Int = i;
+            if end > start && byte_at(text, end - 1) == 13 { // \r
+                end = end - 1;
+            }
+            lines = list_push(lines, str_slice(text, start, end));
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    if start < n {
+        let mut end: Int = n;
+        if end > start && byte_at(text, end - 1) == 13 {
+            end = end - 1;
+        }
+        lines = list_push(lines, str_slice(text, start, end));
+    }
+    return lines;
+}
+
+pub fn make_blank_paragraph() -> ParagraphBlock {
+    return ParagraphBlock {
+        is_blank: true,
+        has_prefix: false,
+        prefix_text: "",
+        indent1: 0,
+        indent2: 0,
+        words: list_new(),
+        raw_lines: list_new()
+    };
+}
+
+pub fn extract_paragraphs(
+    text: String,
+    expected_prefix: String,
+    crown_margin: Bool
+) -> List[ParagraphBlock] {
+    let mut paragraphs: List[ParagraphBlock] = list_new();
+    let lines: List[String] = split_text_lines(text);
+    let num_lines: Int = list_len(lines);
+    let has_target_prefix: Bool = chars_len(expected_prefix) > 0;
+
+    let mut cur_lines: List[String] = list_new();
+    let mut cur_words: List[String] = list_new();
+    let mut cur_indent1: Int = 0;
+    let mut cur_indent2: Int = 0;
+    let mut in_para: Bool = false;
+
+    let mut i: Int = 0;
+    while i < num_lines {
+        let line: String = list_get(lines, i);
+        let trimmed: String = str_trim(line);
+
+        if chars_len(trimmed) == 0 {
+            // Blank line finishes any pending paragraph
+            if in_para {
+                paragraphs = list_push(paragraphs, ParagraphBlock {
+                    is_blank: false,
+                    has_prefix: has_target_prefix,
+                    prefix_text: expected_prefix,
+                    indent1: cur_indent1,
+                    indent2: cur_indent2,
+                    words: cur_words,
+                    raw_lines: cur_lines
+                });
+                cur_lines = list_new();
+                cur_words = list_new();
+                in_para = false;
+            }
+            paragraphs = list_push(paragraphs, make_blank_paragraph());
+            i = i + 1;
+            continue;
+        }
+
+        let prefix_matched: Bool = if has_target_prefix {
+            has_string_prefix(line, expected_prefix)
+        } else {
+            true
+        };
+
+        if has_target_prefix && !prefix_matched {
+            // If prefix filter is active and this line doesn't match, emit standalone raw paragraph
+            if in_para {
+                paragraphs = list_push(paragraphs, ParagraphBlock {
+                    is_blank: false,
+                    has_prefix: has_target_prefix,
+                    prefix_text: expected_prefix,
+                    indent1: cur_indent1,
+                    indent2: cur_indent2,
+                    words: cur_words,
+                    raw_lines: cur_lines
+                });
+                cur_lines = list_new();
+                cur_words = list_new();
+                in_para = false;
+            }
+            let mut raw_single: List[String] = list_new();
+            raw_single = list_push(raw_single, line);
+            paragraphs = list_push(paragraphs, ParagraphBlock {
+                is_blank: false,
+                has_prefix: false,
+                prefix_text: "",
+                indent1: count_leading_spaces(line),
+                indent2: count_leading_spaces(line),
+                words: split_into_words(line),
+                raw_lines: raw_single
+            });
+            i = i + 1;
+            continue;
+        }
+
+        // Active paragraph accumulation
+        let effective_content: String = if has_target_prefix {
+            strip_string_prefix(line, expected_prefix)
+        } else {
+            line
+        };
+
+        let line_indent: Int = count_leading_spaces(effective_content);
+        let words: List[String] = split_into_words(effective_content);
+
+        if !in_para {
+            in_para = true;
+            cur_indent1 = line_indent;
+            cur_indent2 = line_indent;
+            cur_lines = list_new();
+            cur_words = list_new();
+        } else {
+            if list_len(cur_lines) == 1 && crown_margin {
+                cur_indent2 = line_indent;
+            }
+        }
+
+        cur_lines = list_push(cur_lines, line);
+        let num_w: Int = list_len(words);
+        let mut w_idx: Int = 0;
+        while w_idx < num_w {
+            cur_words = list_push(cur_words, list_get(words, w_idx));
+            w_idx = w_idx + 1;
+        }
+
+        i = i + 1;
+    }
+
+    if in_para {
+        paragraphs = list_push(paragraphs, ParagraphBlock {
+            is_blank: false,
+            has_prefix: has_target_prefix,
+            prefix_text: expected_prefix,
+            indent1: cur_indent1,
+            indent2: cur_indent2,
+            words: cur_words,
+            raw_lines: cur_lines
+        });
+    }
+
+    return paragraphs;
+}

@@ -1,0 +1,157 @@
+// # MCP Server Subsystem
+//
+// Logline: Implements JSON-RPC 2.0 Model Context Protocol stdio server for AI agents.
+//
+// Setup: Pure IPC message parser dispatching text reflow and margin tools across stdin/stdout.
+//
+// Beats:
+//   1. Handle protocol handshake (initialize) and advertise tools/list.
+//   2. Dispatch tool calls: fmt_format_text, fmt_reflow_paragraph.
+//   3. Dispatch inspection and stripping tools: fmt_inspect_margins, fmt_strip_prefixes.
+//   4. Emit formatted JSON-RPC 2.0 responses.
+
+import "core/fmt_options.oo";
+import "core/text_words.oo";
+import "core/paragraph_model.oo";
+import "core/reflow_engine.oo";
+import "core/margin_auditor.oo";
+import "render/render_text.oo";
+import "render/render_json.oo";
+import "ipc/json_field.oo";
+
+pub fn render_mcp_init(id_str: String) -> String {
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id_str + ",\"result\":{"
+        + "\"protocolVersion\":\"2024-11-05\","
+        + "\"capabilities\":{\"tools\":{}},"
+        + "\"serverInfo\":{\"name\":\"oofmt\",\"version\":\"0.2.0\"}"
+        + "}}\n";
+}
+
+pub fn render_mcp_tools_list(id_str: String) -> String {
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id_str + ",\"result\":{\"tools\":["
+        + "{\"name\":\"fmt_format_text\",\"description\":\"Reflows text with width, goal, split_only, uniform, and prefix options.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"width\":{\"type\":\"integer\"},\"goal\":{\"type\":\"integer\"},\"split_only\":{\"type\":\"boolean\"},\"uniform\":{\"type\":\"boolean\"},\"prefix\":{\"type\":\"string\"}},\"required\":[\"text\"]}},"
+        + "{\"name\":\"fmt_reflow_paragraph\",\"description\":\"Reflows a paragraph string and returns structured JSON with reflow metrics.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"width\":{\"type\":\"integer\"},\"crown\":{\"type\":\"boolean\"},\"prefix\":{\"type\":\"string\"}},\"required\":[\"text\"]}},"
+        + "{\"name\":\"fmt_inspect_margins\",\"description\":\"Analyzes line lengths, margin adherence, and detected overflows in text.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"width\":{\"type\":\"integer\"}},\"required\":[\"text\"]}},"
+        + "{\"name\":\"fmt_strip_prefixes\",\"description\":\"Strips comment or quote prefixes from lines of text.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"},\"prefix\":{\"type\":\"string\"}},\"required\":[\"text\",\"prefix\"]}},"
+        + "{\"name\":\"fmt_demo\",\"description\":\"Runs interactive sovereign text reflow and paragraph reformer showcase.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}"
+        + "]}}\n";
+}
+
+fn render_tool_result(id_str: String, text: String) -> String {
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id_str + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\""
+        + json_str_escape(text) + "\"}]}}\n";
+}
+
+fn strip_text_prefixes(text: String, prefix: String) -> String {
+    let lines: List[String] = split_text_lines(text);
+    let num_lines: Int = list_len(lines);
+    let mut out: String = "";
+    let mut i: Int = 0;
+    while i < num_lines {
+        let line: String = list_get(lines, i);
+        out = out + strip_string_prefix(line, prefix) + "\n";
+        i = i + 1;
+    }
+    return out;
+}
+
+pub fn handle_mcp_request(raw_line: String) -> String {
+    let id_val: Int = json_extract_int_field(raw_line, "id", 1);
+    let id_str: String = id_val.to_string();
+    let method: String = json_extract_str_field(raw_line, "method");
+
+    if method == "initialize" {
+        return render_mcp_init(id_str);
+    }
+    if method == "notifications/initialized" {
+        return "";
+    }
+    if method == "tools/list" {
+        return render_mcp_tools_list(id_str);
+    }
+    if method == "tools/call" {
+        let tool_name: String = json_extract_str_field(raw_line, "name");
+
+        if tool_name == "fmt_format_text" {
+            let text: String = json_extract_str_field(raw_line, "text");
+            let width: Int = json_extract_int_field(raw_line, "width", 75);
+            let goal: Int = json_extract_int_field(raw_line, "goal", width - 5);
+            let split_only: Bool = json_extract_bool_field(raw_line, "split_only", false);
+            let uniform: Bool = json_extract_bool_field(raw_line, "uniform", false);
+            let prefix: String = json_extract_str_field(raw_line, "prefix");
+            let cfg: FmtConfig = make_custom_config(width, goal, split_only, uniform, false, prefix);
+            return render_tool_result(id_str, reflow_text(text, cfg));
+        }
+        if tool_name == "fmt_reflow_paragraph" {
+            let text: String = json_extract_str_field(raw_line, "text");
+            let width: Int = json_extract_int_field(raw_line, "width", 75);
+            let crown: Bool = json_extract_bool_field(raw_line, "crown", false);
+            let prefix: String = json_extract_str_field(raw_line, "prefix");
+            let cfg: FmtConfig = make_custom_config(width, width - 5, false, false, crown, prefix);
+            let formatted: String = reflow_text(text, cfg);
+            let stats: MarginStats = audit_margins(text, formatted, width);
+            return render_tool_result(id_str, render_reflow_json(stats, formatted));
+        }
+        if tool_name == "fmt_inspect_margins" {
+            let text: String = json_extract_str_field(raw_line, "text");
+            let width: Int = json_extract_int_field(raw_line, "width", 75);
+            let stats: MarginStats = audit_margins(text, text, width);
+            return render_tool_result(id_str, render_margin_audit_json(stats));
+        }
+        if tool_name == "fmt_strip_prefixes" {
+            let text: String = json_extract_str_field(raw_line, "text");
+            let prefix: String = json_extract_str_field(raw_line, "prefix");
+            return render_tool_result(id_str, strip_text_prefixes(text, prefix));
+        }
+        if tool_name == "fmt_demo" {
+            return render_tool_result(id_str, render_demo_showcase());
+        }
+
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id_str + ",\"error\":{\"code\":-32601,\"message\":\"Unknown tool: " + json_str_escape(tool_name) + "\"}}\n";
+    }
+
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id_str + ",\"error\":{\"code\":-32601,\"message\":\"Method not found: " + json_str_escape(method) + "\"}}\n";
+}
+
+fn find_newline_pos(s: String) -> Int {
+    let n: Int = chars_len(s);
+    let mut i: Int = 0;
+    while i < n {
+        if byte_at(s, i) == 10 {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+pub fn run_mcp_server(fr: &FsReadCap) {
+    let mut buf: String = "";
+    let mut running: Bool = true;
+    while running {
+        let r: Result[String, String] = oo_read_stdin_chunk(fr, 4096);
+        if !r.is_ok() {
+            running = false;
+        } else {
+            let chunk: String = match r { Ok(s) => s, Err(_) => "" };
+            if chars_len(chunk) == 0 {
+                running = false;
+            } else {
+                buf = buf + chunk;
+                let mut nl_pos: Int = find_newline_pos(buf);
+                while nl_pos >= 0 {
+                    let line: String = str_slice(buf, 0, nl_pos);
+                    buf = str_slice(buf, nl_pos + 1, chars_len(buf));
+                    let trimmed: String = str_trim(line);
+                    if chars_len(trimmed) > 0 {
+                        let resp: String = handle_mcp_request(trimmed);
+                        if chars_len(resp) > 0 {
+                            print(resp);
+                        }
+                    }
+                    nl_pos = find_newline_pos(buf);
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,61 @@
+// # Render JSON Subsystem
+//
+// Logline: Serializes reflow metrics, paragraph tokens, and margin audits into RFC 8259 JSON objects.
+//
+// Setup: Pure string formatter emitting machine-readable payloads for MCP AI clients.
+//
+// Beats:
+//   1. Serialize margin statistics and line wrap metrics into structured JSON.
+//   2. Serialize paragraph blocks, detected prefixes, and indentation levels.
+//   3. Serialize formatted text payloads with escaped newlines and quotes.
+
+import "core/margin_auditor.oo";
+import "core/paragraph_model.oo";
+import "ipc/json_field.oo";
+
+pub fn render_reflow_json(stats: MarginStats, formatted: String) -> String {
+    return "{\n"
+        + "  \"target_width\": " + stats.target_width.to_string() + ",\n"
+        + "  \"paragraphs_count\": " + stats.paragraphs_count.to_string() + ",\n"
+        + "  \"total_words\": " + stats.words_count.to_string() + ",\n"
+        + "  \"lines_before\": " + stats.lines_before.to_string() + ",\n"
+        + "  \"lines_after\": " + stats.lines_after.to_string() + ",\n"
+        + "  \"max_line_length\": " + stats.max_line_len.to_string() + ",\n"
+        + "  \"overflow_lines\": " + stats.overflow_lines.to_string() + ",\n"
+        + "  \"formatted_text\": \"" + json_str_escape(formatted) + "\"\n"
+        + "}\n";
+}
+
+pub fn render_margin_audit_json(stats: MarginStats) -> String {
+    return "{\n"
+        + "  \"target_width\": " + stats.target_width.to_string() + ",\n"
+        + "  \"paragraphs_count\": " + stats.paragraphs_count.to_string() + ",\n"
+        + "  \"total_words\": " + stats.words_count.to_string() + ",\n"
+        + "  \"lines_before\": " + stats.lines_before.to_string() + ",\n"
+        + "  \"lines_after\": " + stats.lines_after.to_string() + ",\n"
+        + "  \"max_line_length\": " + stats.max_line_len.to_string() + ",\n"
+        + "  \"overflow_lines\": " + stats.overflow_lines.to_string() + ",\n"
+        + "  \"compliant\": " + (if stats.overflow_lines == 0 { "true" } else { "false" }) + "\n"
+        + "}\n";
+}
+
+pub fn render_paragraphs_json(paras: List[ParagraphBlock]) -> String {
+    let mut out: String = "{\n  \"paragraphs\": [\n";
+    let n: Int = list_len(paras);
+    let mut i: Int = 0;
+    while i < n {
+        let p: ParagraphBlock = list_get(paras, i);
+        out = out + "    {\n"
+            + "      \"is_blank\": " + (if p.is_blank { "true" } else { "false" }) + ",\n"
+            + "      \"has_prefix\": " + (if p.has_prefix { "true" } else { "false" }) + ",\n"
+            + "      \"prefix\": \"" + json_str_escape(p.prefix_text) + "\",\n"
+            + "      \"indent1\": " + p.indent1.to_string() + ",\n"
+            + "      \"indent2\": " + p.indent2.to_string() + ",\n"
+            + "      \"words_count\": " + list_len(p.words).to_string() + "\n"
+            + "    }";
+        if i + 1 < n { out = out + ",\n"; } else { out = out + "\n"; }
+        i = i + 1;
+    }
+    out = out + "  ]\n}\n";
+    return out;
+}

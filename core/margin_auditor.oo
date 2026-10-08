@@ -1,0 +1,98 @@
+// # Margin Auditor - Structural Line Length and Margin Inspector
+//
+// Logline: Measures before-and-after line metrics, word counts, and margin overflow checks.
+//
+// Setup: Pure analytic calculator evaluating formatting compliance against target boundaries.
+//
+// Beats:
+//   1. Count lines and words across original and reflowed text buffers.
+//   2. Identify maximum line length and any boundary overflow violations.
+//   3. Collate statistics into typed MarginStats record.
+//   4. Format diagnostic report for human operators and auditing suites.
+
+import "core/text_words.oo";
+import "core/paragraph_model.oo";
+
+pub type MarginStats = struct {
+    lines_before: Int,
+    lines_after: Int,
+    words_count: Int,
+    paragraphs_count: Int,
+    max_line_len: Int,
+    overflow_lines: Int,
+    target_width: Int
+};
+
+pub fn audit_margins(
+    original: String,
+    formatted: String,
+    target_width: Int
+) -> MarginStats {
+    let orig_lines: List[String] = split_text_lines(original);
+    let form_lines: List[String] = split_text_lines(formatted);
+
+    let num_orig: Int = list_len(orig_lines);
+    let num_form: Int = list_len(form_lines);
+
+    let mut total_words: Int = 0;
+    let mut i: Int = 0;
+    while i < num_orig {
+        let line: String = list_get(orig_lines, i);
+        let words: List[String] = split_into_words(line);
+        total_words = total_words + list_len(words);
+        i = i + 1;
+    }
+
+    let paras: List[ParagraphBlock] = extract_paragraphs(original, "", false);
+    let mut num_paras: Int = 0;
+    let mut p_idx: Int = 0;
+    while p_idx < list_len(paras) {
+        let p: ParagraphBlock = list_get(paras, p_idx);
+        if !p.is_blank {
+            num_paras = num_paras + 1;
+        }
+        p_idx = p_idx + 1;
+    }
+
+    let mut max_len: Int = 0;
+    let mut overflows: Int = 0;
+    let mut j: Int = 0;
+    while j < num_form {
+        let line: String = list_get(form_lines, j);
+        let l_len: Int = chars_len(line);
+        if l_len > max_len {
+            max_len = l_len;
+        }
+        if l_len > target_width {
+            overflows = overflows + 1;
+        }
+        j = j + 1;
+    }
+
+    return MarginStats {
+        lines_before: num_orig,
+        lines_after: num_form,
+        words_count: total_words,
+        paragraphs_count: num_paras,
+        max_line_len: max_len,
+        overflow_lines: overflows,
+        target_width: target_width
+    };
+}
+
+pub fn render_margin_report(stats: MarginStats) -> String {
+    let mut out: String = "=== oofmt Margin & Reflow Audit Report ===\n";
+    out = out + "Target Line Width : " + stats.target_width.to_string() + "\n";
+    out = out + "Paragraphs Count  : " + stats.paragraphs_count.to_string() + "\n";
+    out = out + "Total Words       : " + stats.words_count.to_string() + "\n";
+    out = out + "Lines Before      : " + stats.lines_before.to_string() + "\n";
+    out = out + "Lines After       : " + stats.lines_after.to_string() + "\n";
+    out = out + "Max Line Length   : " + stats.max_line_len.to_string() + "\n";
+    out = out + "Overflow Lines    : " + stats.overflow_lines.to_string() + "\n";
+    if stats.overflow_lines == 0 {
+        out = out + "[PASS] All lines strictly comply with target width constraint.\n";
+    } else {
+        out = out + "[WARN] Detected " + stats.overflow_lines.to_string() + " lines exceeding width constraint.\n";
+    }
+    return out;
+}

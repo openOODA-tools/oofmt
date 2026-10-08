@@ -1,0 +1,92 @@
+// # CLI Options Parser - Parameter Extraction Subsystem
+//
+// Logline: Decodes POSIX flags, GNU shorthands, and file targets into structured FmtConfig.
+//
+// Setup: Pure argument vector scanner without process mutations or environment side-effects.
+//
+// Beats:
+//   1. Parse standard flags (-w, -g, -s, -u, -c, -p, -j, -D).
+//   2. Parse numeric shorthand flags (e.g. -60 or -75 for width).
+//   3. Extract file paths and standard input markers.
+//   4. Build and return populated FmtConfig record.
+
+import "core/fmt_options.oo";
+import "core/text_words.oo";
+
+fn is_numeric_flag(arg: String) -> Bool {
+    let n: Int = chars_len(arg);
+    if n < 2 || byte_at(arg, 0) != 45 { // '-'
+        return false;
+    }
+    let mut i: Int = 1;
+    while i < n {
+        let b: Int = byte_at(arg, i);
+        if !is_ascii_digit(b) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+pub fn parse_cli_args(args: List[String]) -> FmtConfig {
+    let mut cfg: FmtConfig = default_fmt_config();
+    let num_args: Int = list_len(args);
+    let mut files: List[String] = list_new();
+    let mut i: Int = 0;
+
+    while i < num_args {
+        let arg: String = list_get(args, i);
+
+        if arg == "-h" || arg == "--help" {
+            cfg.help = true;
+        } else if arg == "-v" || arg == "--version" {
+            cfg.version = true;
+        } else if arg == "--test" {
+            cfg.test_mode = true;
+        } else if arg == "--mcp" {
+            cfg.mcp_mode = true;
+        } else if arg == "-D" || arg == "--demo" {
+            cfg.demo = true;
+        } else if arg == "-j" || arg == "--json" {
+            cfg.json_mode = true;
+        } else if arg == "-s" || arg == "--split-only" {
+            cfg.split_only = true;
+        } else if arg == "-u" || arg == "--uniform-spacing" {
+            cfg.uniform_spacing = true;
+        } else if arg == "-c" || arg == "--crown-margin" {
+            cfg.crown_margin = true;
+        } else if (arg == "-w" || arg == "--width") && i + 1 < num_args {
+            i = i + 1;
+            cfg.width = parse_int_positive(list_get(args, i), 75);
+        } else if has_string_prefix(arg, "--width=") {
+            cfg.width = parse_int_positive(strip_string_prefix(arg, "--width="), 75);
+        } else if (arg == "-g" || arg == "--goal") && i + 1 < num_args {
+            i = i + 1;
+            cfg.goal = parse_int_positive(list_get(args, i), cfg.width - 5);
+        } else if has_string_prefix(arg, "--goal=") {
+            cfg.goal = parse_int_positive(strip_string_prefix(arg, "--goal="), cfg.width - 5);
+        } else if (arg == "-p" || arg == "--prefix") && i + 1 < num_args {
+            i = i + 1;
+            cfg.prefix = list_get(args, i);
+        } else if has_string_prefix(arg, "--prefix=") {
+            cfg.prefix = strip_string_prefix(arg, "--prefix=");
+        } else if is_numeric_flag(arg) {
+            // Support e.g. -60 shorthand for -w 60
+            let num_str: String = strip_string_prefix(arg, "-");
+            cfg.width = parse_int_positive(num_str, 75);
+        } else if !has_string_prefix(arg, "-") || arg == "-" {
+            files = list_push(files, arg);
+        }
+
+        i = i + 1;
+    }
+
+    // Default goal if not explicitly set
+    if cfg.goal <= 0 || cfg.goal > cfg.width {
+        cfg.goal = if cfg.width > 10 { cfg.width - 5 } else { cfg.width };
+    }
+
+    cfg.files = files;
+    return cfg;
+}

@@ -1,0 +1,78 @@
+// # oofmt Core Subsystem Anchor
+//
+// Logline: Consolidates formatting options, word parsing, paragraph models, and reflow engines.
+//
+// Setup: Pure test harness validating internal reflow semantics without I/O side-effects.
+//
+// Beats:
+//   1. Re-export options, word tokenization, paragraphing, and reflow logic.
+//   2. Validate whitespace analysis and prefix stripping algorithms.
+//   3. Assert paragraph word-wrapping compliance against narrow boundaries.
+//   4. Verify sentence boundary uniform spacing and split-only behaviors.
+
+import "core/fmt_options.oo";
+import "core/text_words.oo";
+import "core/paragraph_model.oo";
+import "core/reflow_engine.oo";
+import "core/margin_auditor.oo";
+
+fn assert_true(cond: Bool, msg: String) -> Bool {
+    if !cond {
+        print("FAIL: " + msg + "\n");
+        return false;
+    }
+    return true;
+}
+
+pub fn run_core_tests() -> Bool {
+    let mut ok: Bool = true;
+
+    // Test 1: Leading space calculation
+    ok = ok && assert_true(count_leading_spaces("    hello") == 4, "count_leading_spaces spaces");
+    ok = ok && assert_true(count_leading_spaces("\thello") == 4, "count_leading_spaces tab expansion");
+
+    // Test 2: Prefix stripping
+    ok = ok && assert_true(has_string_prefix("> test", "> "), "has_string_prefix match");
+    ok = ok && assert_true(strip_string_prefix("> test", "> ") == "test", "strip_string_prefix");
+
+    // Test 3: Sentence boundary detection
+    ok = ok && assert_true(is_sentence_boundary("hello."), "sentence boundary period");
+    ok = ok && assert_true(is_sentence_boundary("ready!"), "sentence boundary exclamation");
+    ok = ok && assert_true(!is_sentence_boundary("word,"), "sentence boundary comma negative");
+
+    // Test 4: Basic reflow wrapping at width 25
+    let raw_text: String = "The openOODA project provides sovereign capability bounded utilities for Linux servers.";
+    let cfg25: FmtConfig = make_custom_config(25, 20, false, false, false, "");
+    let wrapped: String = reflow_text(raw_text, cfg25);
+    let stats: MarginStats = audit_margins(raw_text, wrapped, 25);
+    ok = ok && assert_true(stats.overflow_lines == 0, "no overflow lines at width 25");
+    ok = ok && assert_true(stats.lines_after > 1, "multiple lines generated at width 25");
+
+    // Test 5: Split-only mode
+    let split_cfg: FmtConfig = make_custom_config(20, 15, true, false, false, "");
+    let input_lines: String = "short line\nanother line\nthis is an exceptionally long line that must be broken into parts\n";
+    let split_res: String = reflow_text(input_lines, split_cfg);
+    let split_stats: MarginStats = audit_margins(input_lines, split_res, 20);
+    ok = ok && assert_true(split_stats.overflow_lines == 0, "split-only broke long line without overflow");
+
+    // Test 6: Uniform spacing
+    let u_cfg: FmtConfig = make_custom_config(80, 75, false, true, false, "");
+    let u_in: String = "First sentence.   Second sentence?   Third sentence! Done.";
+    let u_out: String = reflow_text(u_in, u_cfg);
+    ok = ok && assert_true(chars_len(u_out) > 0, "uniform spacing produced output");
+
+    // Test 7: Quoted prefix preservation
+    let p_cfg: FmtConfig = make_custom_config(30, 25, false, false, false, "> ");
+    let p_in: String = "> This is an ancient email quote that needs proper reflow across narrow terminal lines.\n";
+    let p_out: String = reflow_text(p_in, p_cfg);
+    ok = ok && assert_true(has_string_prefix(p_out, "> "), "reflow preserved quote prefix");
+
+    // Test 8: Paragraph extraction
+    let test_paras: List[ParagraphBlock] = extract_paragraphs("first block\n\nsecond block\n", "", false);
+    ok = ok && assert_true(list_len(test_paras) >= 2, "extracted paragraph blocks");
+
+    if ok {
+        print("ALL oofmt core anchor tests PASSED\n");
+    }
+    return ok;
+}

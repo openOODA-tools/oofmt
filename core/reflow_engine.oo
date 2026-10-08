@@ -1,0 +1,159 @@
+// # Reflow Engine - Optimal Word Wrapping and Text Flow
+//
+// Logline: Formats paragraphs against fixed margins, goal widths, and crown indentations.
+//
+// Setup: Hermetic line packing algorithm adhering strictly to requested width constraints.
+//
+// Beats:
+//   1. Dispatch split-only line breaking or full paragraph rewrapping.
+//   2. Respect first-line vs crown indentation and prefix markers.
+//   3. Pack words greedily up to maximum line width limits.
+//   4. Apply uniform spacing and sentence ending double-space rules.
+
+import "core/fmt_options.oo";
+import "core/text_words.oo";
+import "core/paragraph_model.oo";
+
+pub fn split_line_at_width(line: String, width: Int, prefix: String) -> List[String] {
+    let mut out: List[String] = list_new();
+    let unprefix: String = strip_string_prefix(line, prefix);
+    let indent_count: Int = count_leading_spaces(unprefix);
+    let words: List[String] = split_into_words(unprefix);
+    let num_w: Int = list_len(words);
+    if num_w == 0 {
+        out = list_push(out, prefix);
+        return out;
+    }
+
+    let base_lead: String = prefix + repeat_spaces(indent_count);
+    let base_len: Int = chars_len(base_lead);
+    let mut cur_line: String = base_lead;
+    let mut cur_len: Int = base_len;
+    let mut i: Int = 0;
+
+    while i < num_w {
+        let w: String = list_get(words, i);
+        let w_len: Int = chars_len(w);
+        let space_needed: Int = if cur_len > base_len { 1 } else { 0 };
+
+        if cur_len + space_needed + w_len <= width || cur_len == base_len {
+            if space_needed > 0 {
+                cur_line = cur_line + " ";
+                cur_len = cur_len + 1;
+            }
+            cur_line = cur_line + w;
+            cur_len = cur_len + w_len;
+        } else {
+            out = list_push(out, cur_line);
+            cur_line = prefix + repeat_spaces(indent_count) + w;
+            cur_len = base_len + w_len;
+        }
+        i = i + 1;
+    }
+
+    if cur_len > 0 {
+        out = list_push(out, cur_line);
+    }
+    return out;
+}
+
+pub fn reflow_paragraph(para: ParagraphBlock, cfg: FmtConfig) -> List[String] {
+    let mut res: List[String] = list_new();
+    if para.is_blank {
+        res = list_push(res, "");
+        return res;
+    }
+
+    if cfg.split_only {
+        let num_raw: Int = list_len(para.raw_lines);
+        let mut r_idx: Int = 0;
+        while r_idx < num_raw {
+            let raw: String = list_get(para.raw_lines, r_idx);
+            if chars_len(raw) > cfg.width {
+                let parts: List[String] = split_line_at_width(raw, cfg.width, para.prefix_text);
+                let num_p: Int = list_len(parts);
+                let mut p_idx: Int = 0;
+                while p_idx < num_p {
+                    res = list_push(res, list_get(parts, p_idx));
+                    p_idx = p_idx + 1;
+                }
+            } else {
+                res = list_push(res, raw);
+            }
+            r_idx = r_idx + 1;
+        }
+        return res;
+    }
+
+    let num_words: Int = list_len(para.words);
+    if num_words == 0 {
+        res = list_push(res, "");
+        return res;
+    }
+
+    let lead1_len: Int = chars_len(para.prefix_text) + para.indent1;
+    let lead2_len: Int = chars_len(para.prefix_text) + para.indent2;
+
+    let mut is_first_line: Bool = true;
+    let mut cur_line: String = para.prefix_text + repeat_spaces(para.indent1);
+    let mut cur_len: Int = lead1_len;
+    let mut prev_word_sentence_end: Bool = false;
+
+    let mut w_idx: Int = 0;
+    while w_idx < num_words {
+        let w: String = list_get(para.words, w_idx);
+        let w_len: Int = chars_len(w);
+        let active_lead_len: Int = if is_first_line { lead1_len } else { lead2_len };
+
+        let space_count: Int = if cur_len > active_lead_len {
+            if cfg.uniform_spacing && prev_word_sentence_end { 2 } else { 1 }
+        } else {
+            0
+        };
+
+        if cur_len + space_count + w_len <= cfg.width || cur_len == active_lead_len {
+            if space_count == 1 {
+                cur_line = cur_line + " ";
+                cur_len = cur_len + 1;
+            } else if space_count == 2 {
+                cur_line = cur_line + "  ";
+                cur_len = cur_len + 2;
+            }
+            cur_line = cur_line + w;
+            cur_len = cur_len + w_len;
+        } else {
+            res = list_push(res, cur_line);
+            is_first_line = false;
+            cur_line = para.prefix_text + repeat_spaces(para.indent2) + w;
+            cur_len = lead2_len + w_len;
+        }
+
+        prev_word_sentence_end = is_sentence_boundary(w);
+        w_idx = w_idx + 1;
+    }
+
+    if cur_len > 0 {
+        res = list_push(res, cur_line);
+    }
+    return res;
+}
+
+pub fn reflow_text(text: String, cfg: FmtConfig) -> String {
+    let paras: List[ParagraphBlock] = extract_paragraphs(text, cfg.prefix, cfg.crown_margin);
+    let num_paras: Int = list_len(paras);
+    let mut out: String = "";
+
+    let mut p_idx: Int = 0;
+    while p_idx < num_paras {
+        let p: ParagraphBlock = list_get(paras, p_idx);
+        let lines: List[String] = reflow_paragraph(p, cfg);
+        let num_lines: Int = list_len(lines);
+        let mut l_idx: Int = 0;
+        while l_idx < num_lines {
+            out = out + list_get(lines, l_idx) + "\n";
+            l_idx = l_idx + 1;
+        }
+        p_idx = p_idx + 1;
+    }
+    return out;
+}

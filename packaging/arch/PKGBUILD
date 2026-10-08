@@ -1,9 +1,9 @@
 # Maintainer: openOODA-tools <ops@openooda.org>
 pkgname=oofmt-bin
 _pkgname=oofmt
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
-pkgdesc="Simple optimal text paragraph reformer keeping uniform margins and clean gutters."
+pkgdesc="Sovereign optimal paragraph reformer and text reflower in pure openOODA."
 arch=('x86_64')
 url="https://github.com/openOODA-tools/oofmt"
 license=('Apache-2.0')

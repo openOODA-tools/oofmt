@@ -1,13 +1,28 @@
-// # oofmt Root Anchor
+// # oofmt Root Anchor Subsystem
 //
-// Logline: Top-level anchor re-exporting options, core logic, render, and ipc subsystems.
+// Logline: Top-level anchor consolidating core, render, and ipc subsystems for oofmt.
 //
-// Setup: Pure shim re-exporting all oofmt subsystem anchors.
+// Setup: Pure test suite aggregator demanding zero ambient authority.
 //
 // Beats:
-//   1. Re-export options parsing subsystem.
-//   2. Re-export core oofmt execution engine.
-//   3. Re-export render formatting subsystem.
-//   4. Re-export Model Context Protocol (MCP) IPC subsystem.
+//   1. Re-export core formatting options, tokenization, and reflow engines.
+//   2. Re-export render text formatters, demo showcases, and JSON serializers.
+//   3. Re-export IPC command-line argument parsers and MCP server loop.
+//   4. Execute comprehensive multi-tier test suite across all subsystems.
 
-import "main.oo";
+import "core/anchor.oo";
+import "render/anchor.oo";
+import "ipc/anchor.oo";
+
+pub fn run_all_tests() -> Bool {
+    let mut ok: Bool = true;
+    ok = ok && run_core_tests();
+    ok = ok && run_render_tests();
+    ok = ok && run_ipc_tests();
+    if ok {
+        print("ALL oofmt internal anchor tests PASSED\n");
+    } else {
+        print("SOME oofmt internal anchor tests FAILED\n");
+    }
+    return ok;
+}
